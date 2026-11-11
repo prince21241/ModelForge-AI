@@ -208,18 +208,79 @@ The result is quantized to 6 decimal places. No sample rate in `.env.example` is
 pytest
 ```
 
-The tests cover schema validation, JSONL loading, split sizes, template leakage, numeric and date normalization, exact match, null-versus-null scoring, coverage, API failures, retry bounds, and the held-out test split. External calls are scripted. `pytest` does not need `OPENAI_API_KEY`.
+The tests cover schema validation, JSONL loading, split sizes, template leakage, numeric and date normalization, exact match, null-versus-null scoring, coverage, API failures, retry bounds, the held-out test split, teacher-label checkpoints, and the student JSONL export. External calls are scripted. `pytest` does not need `OPENAI_API_KEY`.
 
 ## What Phase 1 does not do
 
 - It does not fine-tune a student model.
 - It does not serve a model with vLLM or FastAPI.
 - It does not ship a dashboard.
-- It does not prove that a live OpenAI call succeeds. That depends on your key, model access, and network.
+
+## Phase 2: teacher labels for the student
+
+Phase 2 asks the existing teacher to label the 20 training invoices and keeps a row only when that label matches the ground truth. A mismatch is reported and left out of the training file. The teacher output is not replaced with the answer key. The teacher prompt is unchanged, and ground truth is not added to it.
+
+The student file uses an empty string for a missing field. The teacher schema still uses null. The export converts null to an empty string without changing the stored prediction.
+
+Nothing is sent to OpenAI unless `--live` is present. The command reads `data/splits/train.jsonl` only. `--split val` and `--split test` are rejected, and the test file is not opened. Calls are one at a time. `--limit` caps how many new requests a live run makes. A checkpoint is written after each invoice, so the next run skips invoices that already have a result. `--fresh` ignores that checkpoint.
+
+```powershell
+pytest
+python -m scripts.generate_teacher_labels
+python -m scripts.generate_teacher_labels --dry-run
+python -m scripts.generate_teacher_labels --live --limit 2
+python -m scripts.generate_teacher_labels --live
+```
+
+The first two commands are dry runs. They print how many training invoices would be sent and write a report under `reports/`. They do not create `student_train.jsonl`.
+
+A live run writes:
+
+- `data/processed/teacher_labels/checkpoint.jsonl` — every teacher attempt, including failures and mismatches
+- `data/processed/teacher_labels/student_train.jsonl` — verified examples only
+- `reports/phase2_teacher_labels_<utc timestamp>.json` — counts, field accuracy, latency, tokens, and cost
+- `reports/phase2_teacher_labels_<utc timestamp>.txt` — the same summary in plain text
+
+Each training row has the invoice text, the teacher JSON, the document id, the teacher model name, `verification_status`, and a `messages` list. That list is the chat shape a later Hugging Face trainer can adapt. It does not contain a ground-truth field.
+
+Verified means every schema field matches after the Phase 1 normalization: collapsed whitespace, ISO dates, numeric totals, and case-insensitive currency. Null and an empty string are the same missing value. Field accuracy and exact-match accuracy in the report use the Phase 1 scorer.
+
+These artifacts are gitignored, along with `.env`. Do not commit them.
+
+### Phase 2 result
+
+A live run on 11 November 2026 labeled every training invoice with `gpt-4o-mini`. The report is `reports/phase2_teacher_labels_20261111T171208Z.json`.
+
+| Check | Result |
+| --- | --- |
+| Training invoices | 20 |
+| API calls in the finishing run | 16 (4 were already checkpointed) |
+| Successful responses | 20 |
+| API failures | 0 |
+| Verified examples | 20 |
+| Rejected examples | 0 |
+| Exact match | 100% |
+| Average latency | 1338.3 ms |
+| Tokens | 12,897 input, 832 output |
+| Estimated cost | not configured |
+
+Coverage on that same run was 100% for vendor, 90% for invoice number, 80% for invoice date, 95% for total, and 85% for currency. Coverage is the share of training invoices whose ground truth has a value. Accuracy stayed at 100% because the teacher also left those fields empty.
+
+That score is not evidence the teacher, or a future student, will do as well on new layouts. Validation uses only `account_statement`. The locked test split uses only `prose_memo`. Neither layout is in the training file.
+
+The omission schedule also puts both missing-vendor invoices outside the training split, one in validation and one in test. The student file therefore never shows an empty vendor. Missing invoice numbers, dates, totals, and currencies do appear in training.
+
+The student model has not been trained.
+
+### Phase 3 preparation
+
+For a local Windows proof of concept, a suitable student is `Qwen/Qwen2.5-0.5B-Instruct`. It is small, instruction-tuned, available through Hugging Face, and able to emit a short JSON object. A 4-bit QLoRA fine-tune needs a recent NVIDIA GPU. A full fine-tune of this 0.5B model can run on CPU, but it will be slow. `HuggingFaceTB/SmolLM2-360M-Instruct` is the lighter CPU alternative if there is no GPU.
+
+Twenty verified examples are enough to prove the training script runs. They are not enough to expect the student to handle an unseen invoice layout or a missing vendor. Before a serious fine-tune, generate more synthetic training invoices from the four training layouts, including some with an empty vendor. Keep `account_statement` in validation and `prose_memo` in the locked test split. Do not download or train the student until that choice is made.
 
 ## Roadmap
 
-**Phase 2 — Distillation dataset.** Freeze the Phase 1 prompt. Run the teacher on the train split only and store those labels next to the ground truth. Export a supervised fine-tuning file for the student. Do not tune the prompt on the test split.
+**Phase 2 — Distillation dataset.** The label pipeline above is implemented. A live run still needs your approval through `--live`. Do not use the test split while producing student labels.
 
 **Phase 3 — Student fine-tuning.** Fine-tune a smaller open model, for example with LoRA, from the Phase 2 file. Write checkpoints under `models/`. Record the base model, seed, and training config. Checkpoints stay gitignored.
 

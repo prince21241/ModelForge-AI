@@ -18,6 +18,38 @@ Return only the schema fields. Follow these rules:
 """
 
 
+STUDENT_TARGET_INSTRUCTION = """Extract structured fields from one invoice.
+
+Return JSON with these keys only: vendor, invoice_number, date, total, currency.
+Use an empty string when a value is not explicitly written.
+Do not guess a missing vendor, invoice number, date, total, or currency.
+Do not infer a currency from a symbol, and do not add line items to produce a total.
+date is the invoice issue date as YYYY-MM-DD, or an empty string.
+total is a plain nonnegative decimal string, or an empty string.
+"""
+
+
+def build_student_messages(document_text: str, teacher_output_json: str) -> list[dict[str, str]]:
+    """Chat example for a later student trainer.
+
+    The assistant text is the teacher output already verified by the caller.
+    Ground-truth labels are not included.
+    """
+    return [
+        {"role": "system", "content": STUDENT_TARGET_INSTRUCTION},
+        {
+            "role": "user",
+            "content": (
+                "Extract the invoice fields from the document below.\n\n"
+                "<document>\n"
+                f"{document_text}\n"
+                "</document>"
+            ),
+        },
+        {"role": "assistant", "content": teacher_output_json},
+    ]
+
+
 def build_messages(document_text: str) -> list[dict[str, str]]:
     """Build the chat messages for one document.
 
