@@ -29,6 +29,22 @@ total is a plain nonnegative decimal string, or an empty string.
 """
 
 
+def build_student_source(document_text: str) -> str:
+    """Encoder text for the student.
+
+    The invoice sits between plain markers. Angle brackets are avoided because
+    the FLAN-T5 tokenizer turns ``<`` into an unknown token. The teacher JSON
+    and the ground-truth label are not included.
+    """
+    return (
+        f"{STUDENT_TARGET_INSTRUCTION}\n\n"
+        "Extract the invoice fields from the document below.\n\n"
+        "DOCUMENT START\n"
+        f"{document_text}\n"
+        "DOCUMENT END"
+    )
+
+
 def build_student_messages(document_text: str, teacher_output_json: str) -> list[dict[str, str]]:
     """Chat example for a later student trainer.
 

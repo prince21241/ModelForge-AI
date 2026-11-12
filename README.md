@@ -4,9 +4,9 @@ DistillOps AI is a portfolio project for distilling a large teacher language mod
 
 A large model can read those fields well, but it is slow and expensive to run on every document. The goal is to have the teacher write clean labels, train a smaller student on them, and keep the student only if it stays accurate enough while costing less and answering faster.
 
-## Phase 1 and Phase 2
+## Phase 1 through Phase 3
 
-Phase 1 is the measurement setup: schema, fake invoices, teacher client, and scorecard. Phase 2 labeled all 20 training invoices with `gpt-4o-mini`. All 20 labels matched the ground truth. The student model is not trained yet.
+Phase 1 is the measurement setup: schema, fake invoices, teacher client, and scorecard. Phase 2 labeled all 20 training invoices with `gpt-4o-mini`. All 20 labels matched the ground truth. Phase 3 then trained `google/flan-t5-small` for one epoch twice: first with the published vocabulary, then again after giving `{` and `}` their own tokens. Both students save and reload. Neither returned valid JSON on the five validation account statements. A longer training run has not been started.
 
 - Pydantic schema that leaves unknown fields null instead of guessing
 - 30 fictional invoices, generated from a fixed seed
@@ -14,7 +14,7 @@ Phase 1 is the measurement setup: schema, fake invoices, teacher client, and sco
 - Configurable OpenAI teacher client with timeouts and bounded retries
 - Scorecard for field accuracy, exact match, schema validity, latency, tokens, and optional cost
 
-Fine-tuning, FastAPI, and vLLM are later phases. Tests use a fake client and do not call OpenAI. A live labeling run happens only when you pass `--live`.
+Fine-tuning has a one-epoch smoke test. FastAPI and vLLM are still later phases. Tests use a fake client or local fixtures and do not call OpenAI. A live labeling run happens only when you pass `--live`.
 
 Full setup, metrics, and the Phase 2–5 roadmap are in [distillops-ai/README.md](distillops-ai/README.md).
 

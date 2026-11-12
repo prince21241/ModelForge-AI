@@ -270,20 +270,91 @@ That score is not evidence the teacher, or a future student, will do as well on 
 
 The omission schedule also puts both missing-vendor invoices outside the training split, one in validation and one in test. The student file therefore never shows an empty vendor. Missing invoice numbers, dates, totals, and currencies do appear in training.
 
-The student model has not been trained.
+The student model has had one training epoch. That smoke test is recorded in Phase 3 below. A longer run has not been started.
 
-### Phase 3 preparation
+### Phase 3: student fine-tuning
 
-For a local Windows proof of concept, a suitable student is `Qwen/Qwen2.5-0.5B-Instruct`. It is small, instruction-tuned, available through Hugging Face, and able to emit a short JSON object. A 4-bit QLoRA fine-tune needs a recent NVIDIA GPU. A full fine-tune of this 0.5B model can run on CPU, but it will be slow. `HuggingFaceTB/SmolLM2-360M-Instruct` is the lighter CPU alternative if there is no GPU.
+The student is `google/flan-t5-small`, an encoder-decoder with about 77 million parameters. Training is ordinary supervised fine-tuning on the 20 verified teacher rows. The encoder sees the student instruction and the original invoice between the markers `DOCUMENT START` and `DOCUMENT END`. Angle brackets are not used, because FLAN-T5 encodes `<` as `<unk>`. The decoder target is the teacher JSON. `{` and `}` are added as real tokenizer tokens and the embeddings are resized before training. Ground truth is not an input. Missing fields stay empty strings. If a tokenized invoice is longer than the configured limit, the run stops. Text is not cut to fit.
 
-Twenty verified examples are enough to prove the training script runs. They are not enough to expect the student to handle an unseen invoice layout or a missing vendor. Before a serious fine-tune, generate more synthetic training invoices from the four training layouts, including some with an empty vendor. Keep `account_statement` in validation and `prose_memo` in the locked test split. Do not download or train the student until that choice is made.
+The validation command scores five fields: vendor, invoice number, date, total, and currency. It reuses the Phase 1 comparison, so an empty string and null are the same missing value. `document_type` is not predicted and is not part of the score. Invalid JSON counts as a miss and is left out of field accuracy.
+
+The smoke test used Python 3.12, the existing PyTorch 2.11 CUDA build, and an NVIDIA GeForce RTX 5060 Ti with 8 GB of VRAM. One epoch peaked at about 1.5 GB of allocated GPU memory. CPU training is available with `--device cpu`, but it was not the run below.
+
+```powershell
+pytest
+python -m scripts.train_student --epochs 1 --output-dir models/student/flan-t5-small-json-epoch1
+python -m scripts.evaluate_student --model-dir models/student/flan-t5-small-json-epoch1 --split val
+```
+
+`--split test` is rejected before the test file is opened. Training reads `data/processed/teacher_labels/student_train.jsonl` only. Neither command calls OpenAI.
+
+Saved artifacts stay gitignored:
+
+- `models/student/flan-t5-small-epoch1/` — the first smoke test, kept unchanged
+- `models/student/flan-t5-small-json-epoch1/` — the brace-token run, with weights, tokenizer, `training_config.json`, and `training_metrics.json`
+- `reports/phase3_student_val_<utc timestamp>.json` — validation metrics
+- `reports/phase3_student_val_<utc timestamp>.txt` — the same summary in plain text
+
+Reload the saved student with the evaluation command, or with `AutoTokenizer.from_pretrained` and `AutoModelForSeq2SeqLM.from_pretrained` pointed at that directory.
+
+#### Smoke test on 11 November 2026
+
+The run used seed 42, batch size 2, learning rate `1e-4`, max source length 512, and max target length 128. All 20 training inputs fit: source length was 174–243 tokens and target length was 57–66 tokens. The five validation inputs were 192–204 tokens. Nothing was truncated.
+
+| Check | Result |
+| --- | --- |
+| Epochs | 1 |
+| Steps | 10 |
+| Mean training loss | 1.965 |
+| First step loss | 2.521 |
+| Lowest step loss | 1.270 |
+| Last step loss | 1.694 |
+| Device | CUDA |
+| Parameters | 76,961,152 |
+| GPU memory after load | 294 MB |
+| Peak GPU memory allocated | 1.49 GB |
+| Peak GPU memory reserved | 1.66 GB |
+| Checkpoint reload | yes |
+| Truncated inputs | 0 |
+| Validation documents | 5, all `account_statement` |
+| JSON validity | 0/5 |
+| Exact match | 0/5 |
+| Field accuracy | n/a, because no output was valid JSON |
+| Latency | average 4370 ms, median 1034 ms |
+
+The average latency is high because the first decode copied a long passage and took 19.3 seconds. The other four took 209 ms to 1045 ms. Every validation output failed JSON parsing. The model repeated fragments of the account statement, including the `<document>` marker, instead of returning the five-field object. Transformers also printed a non-fatal notice that the input embedding and output head are stored as separate tensors. That is how this checkpoint was published. The saved config records `tie_word_embeddings` as false, and the trained values were not replaced.
+
+These validation documents are held-out account statements. They are not extra copies of the four training layouts, and they are not the locked test split. One epoch on 20 examples only proves that the loop runs, saves, and reloads. It does not show that the student can extract invoice fields. The training file still has no empty vendor.
+
+#### Brace-token run on 11 November 2026
+
+The first checkpoint could not spell `{` or `}`. Both characters, and `<`, were the same unknown token. This run left that checkpoint in place, wrapped each invoice with `DOCUMENT START` and `DOCUMENT END`, and added `{` and `}` as tokens 32100 and 32101. A sample target decoded back to the same five fields, with the braces still present. Training started again from `google/flan-t5-small`, for one epoch, and saved `models/student/flan-t5-small-json-epoch1/`.
+
+| Check | Result |
+| --- | --- |
+| Epochs | 1 |
+| Steps | 10 |
+| Mean training loss | 3.355 |
+| First step loss | 3.940 |
+| Lowest step loss | 2.795 |
+| Last step loss | 3.195 |
+| Parameters | 76,934,528 |
+| GPU memory after load | 294 MB |
+| Peak GPU memory allocated | 1.48 GB |
+| Peak GPU memory reserved | 1.71 GB |
+| Training-invoice JSON validity | 0/2 |
+| Validation JSON validity | 0/5 |
+| Validation exact match | 0/5 |
+| Validation latency | average 602 ms, median 97 ms |
+
+On both checked training invoices, and on all five validation account statements, the raw output was `END`. That is the tail of the new marker, not JSON. The braces can now be represented. One epoch is not enough for the student to emit them. No further epochs were run.
 
 ## Roadmap
 
 **Phase 2 — Distillation dataset.** The label pipeline above is implemented. A live run still needs your approval through `--live`. Do not use the test split while producing student labels.
 
-**Phase 3 — Student fine-tuning.** Fine-tune a smaller open model, for example with LoRA, from the Phase 2 file. Write checkpoints under `models/`. Record the base model, seed, and training config. Checkpoints stay gitignored.
+**Phase 3 — Student fine-tuning.** The first checkpoint is `models/student/flan-t5-small-epoch1/`. The brace-token checkpoint is `models/student/flan-t5-small-json-epoch1/`. Neither one-epoch run emits valid JSON yet. Keep the test split locked.
 
-**Phase 4 — Teacher versus student.** Score both models on the validation split with this evaluation harness. Compare exact match, accuracy when present, schema validity, latency, tokens, and cost. After those choices are frozen, run the test split once.
+**Phase 4 — Teacher versus student.** After a longer student run, score the teacher and the student on the same validation documents. Compare exact match, accuracy when present, JSON validity, latency, and cost. Run the test split once, only after those choices are frozen.
 
 **Phase 5 — Deployment.** Add a FastAPI service and serve the student with vLLM or a similar runtime. Measure latency and cost under a small fixed load. A review UI can come after the service is measurable. The Phase 1 package layout is meant to be imported by that service rather than rewritten.
