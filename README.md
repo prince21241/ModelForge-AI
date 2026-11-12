@@ -6,7 +6,7 @@ A large model can read those fields well, but it is slow and expensive to run on
 
 ## Phase 1 through Phase 3
 
-Phase 1 is the measurement setup: schema, fake invoices, teacher client, and scorecard. Phase 2 labeled all 20 training invoices with `gpt-4o-mini`. All 20 labels matched the ground truth. Phase 3 then trained `google/flan-t5-small` for one epoch twice: first with the published vocabulary, then again after giving `{` and `}` their own tokens. Both students save and reload. Neither returned valid JSON on the five validation account statements. A longer training run has not been started.
+Phase 1 is the measurement setup: schema, fake invoices, teacher client, and scorecard. Phase 2 labeled all 20 training invoices with `gpt-4o-mini`. All 20 labels matched the ground truth. Phase 3 then trained `google/flan-t5-small` on those labels. A three-epoch run with real `{` and `}` tokens finished on 12 November 2026. The checkpoint reloads, but none of the five validation account statements came back as valid JSON. The locked test split has not been scored.
 
 - Pydantic schema that leaves unknown fields null instead of guessing
 - 30 fictional invoices, generated from a fixed seed

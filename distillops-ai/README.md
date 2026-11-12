@@ -291,7 +291,8 @@ python -m scripts.evaluate_student --model-dir models/student/flan-t5-small-json
 Saved artifacts stay gitignored:
 
 - `models/student/flan-t5-small-epoch1/` — the first smoke test, kept unchanged
-- `models/student/flan-t5-small-json-epoch1/` — the brace-token run, with weights, tokenizer, `training_config.json`, and `training_metrics.json`
+- `models/student/flan-t5-small-json-epoch1/` — the one-epoch brace-token run, kept unchanged
+- `models/student/flan-t5-small-json-epoch3/` — the three-epoch baseline, with weights, tokenizer, `training_config.json`, and `training_metrics.json`
 - `reports/phase3_student_val_<utc timestamp>.json` — validation metrics
 - `reports/phase3_student_val_<utc timestamp>.txt` — the same summary in plain text
 
@@ -347,13 +348,49 @@ The first checkpoint could not spell `{` or `}`. Both characters, and `<`, were 
 | Validation exact match | 0/5 |
 | Validation latency | average 602 ms, median 97 ms |
 
-On both checked training invoices, and on all five validation account statements, the raw output was `END`. That is the tail of the new marker, not JSON. The braces can now be represented. One epoch is not enough for the student to emit them. No further epochs were run.
+On both checked training invoices, and on all five validation account statements, the raw output was `END`. That is the tail of the new marker, not JSON. The braces can now be represented. One epoch is not enough for the student to emit them.
+
+#### Three-epoch baseline on 12 November 2026
+
+The same corrected setup was trained for three epochs from `google/flan-t5-small` and saved to `models/student/flan-t5-small-json-epoch3/`. The earlier checkpoints were left in place. The command was:
+
+```powershell
+python -m scripts.train_student --epochs 3 --model google/flan-t5-small --output-dir models/student/flan-t5-small-json-epoch3
+python -m scripts.evaluate_student --model-dir models/student/flan-t5-small-json-epoch3 --split val
+```
+
+The run took 34.1 seconds, including weight loading, three epochs, saving, and the reload check. No training error stopped the run. Transformers again printed the non-fatal notice that the input embedding and output head are stored separately.
+
+| Check | Result |
+| --- | --- |
+| Epochs | 3 |
+| Steps | 30 |
+| Mean training loss | 2.459 |
+| Epoch mean losses | 3.355, 2.302, 1.722 |
+| Final epoch loss | 1.722 |
+| Last step loss | 1.287 |
+| GPU memory after load | 294 MB |
+| Peak GPU memory allocated | 1.49 GB |
+| Peak GPU memory reserved | 1.71 GB |
+| Validation documents | 5, all `account_statement` |
+| JSON validity | 0/5 |
+| Exact match | 0/5 |
+| Field accuracy | n/a, because no output was valid JSON |
+| Latency | average 542 ms, median 59 ms |
+
+The validation report is `reports/phase3_student_val_20261112T173851Z.json`. None of the five outputs parsed. Field accuracy is undefined until the output is valid JSON. The raw strings were `vendor`, `total`, `total`, `vendor`, and a copied statement fragment beginning `VINCE Moss Consulting`. The expected fields for the first three were:
+
+- `inv-synth-021`: vendor Cedar Pine Analytics, empty invoice number, date 2023-07-18, total 57298, currency JPY
+- `inv-synth-022`: empty vendor, invoice number INV-Y547DG, date 2023-05-05, total 7650.87, currency CAD
+- `inv-synth-023`: vendor Copperline Industrial, invoice number INV-GRNN6J, date 2025-05-14, total 2935.75, currency EUR
+
+Loss fell across the three epochs, but the student still does not emit the five-field object. These scores are on held-out account statements, not on the locked test split. Twenty training examples remain a proof of the pipeline, not evidence of generalization.
 
 ## Roadmap
 
 **Phase 2 — Distillation dataset.** The label pipeline above is implemented. A live run still needs your approval through `--live`. Do not use the test split while producing student labels.
 
-**Phase 3 — Student fine-tuning.** The first checkpoint is `models/student/flan-t5-small-epoch1/`. The brace-token checkpoint is `models/student/flan-t5-small-json-epoch1/`. Neither one-epoch run emits valid JSON yet. Keep the test split locked.
+**Phase 3 — Student fine-tuning.** The three-epoch baseline is `models/student/flan-t5-small-json-epoch3/`. Earlier one-epoch checkpoints are still kept. Validation JSON validity on 12 November 2026 was 0/5. Keep the test split locked.
 
 **Phase 4 — Teacher versus student.** After a longer student run, score the teacher and the student on the same validation documents. Compare exact match, accuracy when present, JSON validity, latency, and cost. Run the test split once, only after those choices are frozen.
 
