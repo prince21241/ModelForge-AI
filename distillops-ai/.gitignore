@@ -32,6 +32,10 @@ reports/*
 models/*
 !models/.gitkeep
 
+# Local MLflow tracking
+mlruns/
+mlflow.db
+
 # Editor and OS files
 .idea/
 .vscode/

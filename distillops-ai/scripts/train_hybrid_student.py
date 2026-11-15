@@ -12,17 +12,20 @@ from __future__ import annotations
 import json
 import random
 import time
+from collections.abc import Sequence
 from pathlib import Path
 
 import torch
 
 from src.dataset import load_split
+from src.dated_supplement import DatedInvoice
 from src.hybrid_dataset import generate_hybrid_invoices
 from src.hybrid_training import (
     CONVERGENCE_RULE,
     HYBRID_OUTPUT_DIR,
     VALIDATION_IDS,
     TrainingCheckpointScore,
+    append_dated_pairs,
     assemble_training_pairs,
     assert_fresh_checkpoint,
     classify_student_failure,
@@ -184,9 +187,9 @@ def summarize(score: dict) -> str:
     )
 
 
-def write_report(payload: dict) -> None:
-    REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    REPORT_PATH.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+def write_report(payload: dict, path: Path = REPORT_PATH) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
 def validation_rows() -> tuple[list[dict], dict[str, str]]:
@@ -223,28 +226,44 @@ def validation_rows() -> tuple[list[dict], dict[str, str]]:
     return rows, texts
 
 
-def main() -> None:
+def run_training(
+    *,
+    output_dir: Path = HYBRID_OUTPUT_DIR,
+    report_path: Path = REPORT_PATH,
+    extra_invoices: Sequence[DatedInvoice] = (),
+    previous_checkpoint: Path = EPOCH25_DIR,
+    previous_key: str = "epoch25_validation",
+    convergence_rule: str = CONVERGENCE_RULE,
+    provenance: dict | None = None,
+) -> None:
+    """Train from google/flan-t5-small and score validation once after selection."""
     config = hybrid_train_config()
     require_base_flan_model(config.model_name)
-    assert_fresh_checkpoint(HYBRID_OUTPUT_DIR)
+    assert_fresh_checkpoint(output_dir)
     original = load_training_examples(LABELS)
     hybrid = generate_hybrid_invoices(config.seed)
     prepared = assemble_training_pairs(original, hybrid)
+    if extra_invoices:
+        prepared = append_dated_pairs(prepared, extra_invoices)
     texts = {example.document_id: example.invoice_text for example in original}
     texts.update({invoice.document_id: invoice.document_text for invoice in hybrid})
+    texts.update({invoice.document_id: invoice.document_text for invoice in extra_invoices})
     rows = [
         {"pair": item.pair, "expected": item.pair.teacher_output, "provenance": item.provenance}
         for item in prepared
     ]
-    device = select_device(config.device)
-    started = time.perf_counter()
-    report: dict = {
-        "convergence_rule": CONVERGENCE_RULE,
-        "label_provenance": {
+    if provenance is None:
+        provenance = {
             "verified_teacher": 20,
             "deterministic_ground_truth": 40,
             "teacher_subset": "evaluation_only_not_used_as_targets",
-        },
+        }
+    device = select_device(config.device)
+    started = time.perf_counter()
+    report: dict = {
+        "convergence_rule": convergence_rule,
+        "label_provenance": provenance,
+        "training_examples": len(rows),
         "epoch_mean_loss": [],
         "evaluations": [],
         "stopped_early": False,
@@ -313,10 +332,10 @@ def main() -> None:
         print(f"epoch {epoch}/{config.epochs} mean_loss {mean_loss:.4f}", flush=True)
         completed = epoch
         if epoch % 5 != 0:
-            write_report(report)
+            write_report(report, report_path)
             continue
         score = score_pairs(model, tokenizer, rows, texts, device)
-        checkpoint_dir = HYBRID_OUTPUT_DIR / f"epoch-{epoch:02d}"
+        checkpoint_dir = output_dir / f"epoch-{epoch:02d}"
         save_student(model, tokenizer, checkpoint_dir, config.model_copy(update={"epochs": epoch}))
         checkpoint_score = {
             "epoch": epoch,
@@ -352,11 +371,14 @@ def main() -> None:
             )
         )
         print(f"epoch {epoch} {summarize(score)}", flush=True)
-        write_report(report)
+        write_report(report, report_path)
         if convergence_reached(scores[-1], len(rows)):
             report["stopped_early"] = epoch < config.epochs
-            report["stop_reason"] = CONVERGENCE_RULE
-            print("STOP early: training JSON validity and exact match are 60/60", flush=True)
+            report["stop_reason"] = convergence_rule
+            print(
+                f"STOP early: training JSON validity and exact match are {len(rows)}/{len(rows)}",
+                flush=True,
+            )
             break
     if device.type == "cuda":
         torch.cuda.synchronize()
@@ -394,11 +416,11 @@ def main() -> None:
     del reloaded
     if device.type == "cuda":
         torch.cuda.empty_cache()
-    previous_model, previous_tokenizer = load_student(EPOCH25_DIR, device)
+    previous_model, previous_tokenizer = load_student(previous_checkpoint, device)
     previous = score_pairs(previous_model, previous_tokenizer, val_rows, val_texts, device)
-    report["epoch25_validation"] = _public_score(previous)
-    print(f"EPOCH25 {summarize(previous)}", flush=True)
-    write_report(report)
+    report[previous_key] = _public_score(previous)
+    print(f"PREVIOUS {summarize(previous)}", flush=True)
+    write_report(report, report_path)
     print(
         f"DONE best {report['best_checkpoint']} loss {report['final_epoch_loss']} "
         f"seconds {report['train_seconds']}",
@@ -421,6 +443,10 @@ def _public_score(score: dict) -> dict:
         ],
         "failure_count": len(failures),
     }
+
+
+def main() -> None:
+    run_training()
 
 
 if __name__ == "__main__":

@@ -14,6 +14,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.dataset import write_jsonl
+from src.dated_supplement import DATED_COUNT, DatedInvoice
 from src.evaluation import EvaluationReport, evaluate_predictions, field_values_match
 from src.evaluation_pricing import Pricing
 from src.hybrid_dataset import HYBRID_COUNT, HYBRID_GROUPS, HybridInvoice
@@ -175,6 +176,48 @@ def assemble_training_pairs(
             f"Unexpected label provenance counts: {verified} verified, {deterministic} deterministic."
         )
     return rows
+
+
+def append_dated_pairs(
+    rows: Sequence[ProvenancePair],
+    dated: Sequence[DatedInvoice],
+) -> list[ProvenancePair]:
+    """Add the Dated-line invoices after the existing 60. Labels stay deterministic."""
+    if len(rows) != 60:
+        raise HybridTrainError(f"Expected the 60-row base set, found {len(rows)}.")
+    if len(dated) != DATED_COUNT:
+        raise HybridTrainError(f"Expected {DATED_COUNT} dated invoices, found {len(dated)}.")
+    existing = {row.pair.document_id for row in rows}
+    existing.update(VALIDATION_IDS)
+    built = list(rows)
+    for invoice in dated:
+        if invoice.document_id in existing:
+            raise HybridTrainError(f"{invoice.document_id} is not a new training invoice.")
+        if invoice.label_source != "deterministic_ground_truth":
+            raise HybridTrainError(f"{invoice.document_id} is not a deterministic label.")
+        source = build_student_source(invoice.document_text)
+        if invoice.document_text not in source or "DOCUMENT START" not in source:
+            raise HybridTrainError(f"{invoice.document_id} prompt is not the student source.")
+        if "<document>" in source or "ground_truth" in source:
+            raise HybridTrainError(f"{invoice.document_id} prompt includes held-out text.")
+        target = teacher_target_json(invoice.ground_truth)
+        if "\\" in target:
+            raise HybridTrainError(f"{invoice.document_id} target contains a backslash.")
+        built.append(
+            ProvenancePair(
+                pair=StudentPair(
+                    document_id=invoice.document_id,
+                    source_text=source,
+                    target_text=target,
+                    teacher_output=invoice.ground_truth,
+                ),
+                provenance="deterministic_ground_truth",
+            )
+        )
+        existing.add(invoice.document_id)
+    if len(built) != 60 + DATED_COUNT:
+        raise HybridTrainError(f"Expected {60 + DATED_COUNT} training rows, built {len(built)}.")
+    return built
 
 
 def select_teacher_subset(invoices: Sequence[HybridInvoice]) -> list[HybridInvoice]:
