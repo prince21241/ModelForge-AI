@@ -394,4 +394,39 @@ Loss fell across the three epochs, but the student still does not emit the five-
 
 **Phase 4 — Teacher versus student.** After a longer student run, score the teacher and the student on the same validation documents. Compare exact match, accuracy when present, JSON validity, latency, and cost. Run the test split once, only after those choices are frozen.
 
-**Phase 5 — Deployment.** Add a FastAPI service and serve the student with vLLM or a similar runtime. Measure latency and cost under a small fixed load. A review UI can come after the service is measurable. The Phase 1 package layout is meant to be imported by that service rather than rewritten.
+**Phase 5 — Deployment.** The local FastAPI service is in `backend/` and the review UI is in `frontend/`. The Phase 1 package layout is imported by the service rather than rewritten.
+
+## Local extraction API
+
+The API loads `models/student/flan-t5-small-dated12/epoch-30` on the first extraction request and keeps it for the life of the process. Decoding matches the Phase 4 benchmark: greedy search, one beam, 128 new tokens, and a 512-token source limit. Inputs that do not fit are rejected and are not truncated.
+
+From `distillops-ai`, with the project virtual environment active:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
+```
+
+Swagger is at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs). A sample request:
+
+```powershell
+curl http://127.0.0.1:8000/api/extract -H "Content-Type: application/json" -d "{\"document_text\":\"INVOICE\\nVendor: Northwind Desk\\nTotal: 42.00 USD\",\"model\":\"student\"}"
+```
+
+Backend tests, including the rest of the suite:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q
+```
+
+`GET /api/health` and `GET /api/models` report the student as loaded only after a successful load. `POST /api/extract` accepts `model` value `student`. Every response asks for human review. The service does not report a calibrated confidence score.
+
+The React app runs separately and calls the API from `http://127.0.0.1:5173` or `http://localhost:5173`. Those two origins are the CORS allowlist.
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+The page is [http://127.0.0.1:5173](http://127.0.0.1:5173). `VITE_API_BASE_URL` defaults to `http://127.0.0.1:8000`. Frontend tests are `npm test`. A production bundle is `npm run build`.
