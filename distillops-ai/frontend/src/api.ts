@@ -1,4 +1,10 @@
-import type { ExtractResponse, HealthResponse, ModelsResponse } from "./types";
+import type {
+  BenchmarkLibrary,
+  DocumentExtractResponse,
+  ExtractResponse,
+  HealthResponse,
+  ModelsResponse,
+} from "./types";
 
 export class ApiRequestError extends Error {
   readonly status: number;
@@ -26,6 +32,10 @@ export async function fetchModels(): Promise<ModelsResponse> {
   return readJson<ModelsResponse>(await request("/api/models"));
 }
 
+export async function fetchBenchmarks(): Promise<BenchmarkLibrary> {
+  return readJson<BenchmarkLibrary>(await request("/api/benchmarks"));
+}
+
 export async function extractInvoice(documentText: string): Promise<ExtractResponse> {
   const response = await request("/api/extract", {
     method: "POST",
@@ -33,6 +43,18 @@ export async function extractInvoice(documentText: string): Promise<ExtractRespo
     body: JSON.stringify({ document_text: documentText, model: "student" }),
   });
   return readJson<ExtractResponse>(response);
+}
+
+export async function extractDocument(file: File): Promise<DocumentExtractResponse> {
+  const body = new FormData();
+  body.append("file", file);
+  body.append("model", "student");
+  const response = await request("/api/documents/extract", {
+    method: "POST",
+    headers: { Accept: "application/json" },
+    body,
+  });
+  return readJson<DocumentExtractResponse>(response);
 }
 
 async function request(path: string, init?: RequestInit): Promise<Response> {

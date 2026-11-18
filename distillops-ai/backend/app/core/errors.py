@@ -33,3 +33,61 @@ class ModelLoadError(ApiError):
 class InferenceFailedError(ApiError):
     def __init__(self) -> None:
         super().__init__(500, "Student inference failed.")
+
+
+class UnsupportedFileError(ApiError):
+    def __init__(self) -> None:
+        super().__init__(415, "Unsupported file type. Upload a PDF, PNG, JPG, or JPEG.")
+
+
+class SignatureMismatchError(ApiError):
+    def __init__(self) -> None:
+        super().__init__(415, "The file signature does not match its type.")
+
+
+class EmptyUploadError(ApiError):
+    def __init__(self) -> None:
+        super().__init__(422, "The uploaded file is empty.")
+
+
+class OversizedUploadError(ApiError):
+    def __init__(self) -> None:
+        super().__init__(413, "The upload exceeds the size limit and was not stored.")
+
+
+class PageLimitError(ApiError):
+    def __init__(self) -> None:
+        super().__init__(413, "The PDF exceeds the page limit and was not processed.")
+
+
+class EncryptedPdfError(ApiError):
+    def __init__(self) -> None:
+        super().__init__(422, "This PDF is encrypted and was not opened.")
+
+
+class CorruptDocumentError(ApiError):
+    def __init__(self) -> None:
+        super().__init__(422, "The file is corrupt or is not a readable PDF or image.")
+
+
+class EmptyExtractedTextError(ApiError):
+    def __init__(self) -> None:
+        super().__init__(422, "No readable text was found in the document.")
+
+
+class OcrUnavailableError(ApiError):
+    def __init__(self) -> None:
+        super().__init__(
+            503,
+            "Tesseract OCR is not available. Install Tesseract and set TESSERACT_CMD if needed.",
+        )
+
+
+class OcrTimeoutError(ApiError):
+    def __init__(self) -> None:
+        super().__init__(408, "OCR timed out before the document was read.")
+
+
+class TooManyPixelsError(ApiError):
+    def __init__(self) -> None:
+        super().__init__(413, "The image is too large to process safely.")

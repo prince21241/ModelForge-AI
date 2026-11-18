@@ -1,11 +1,11 @@
 import { BarChart3, FileSearch, GitCompare, LayoutDashboard } from "lucide-react";
 import type { ViewId } from "../types";
 
-const ITEMS: { id: ViewId; label: string; soon: boolean; icon: typeof LayoutDashboard }[] = [
-  { id: "dashboard", label: "Dashboard", soon: false, icon: LayoutDashboard },
-  { id: "extract", label: "Extract Invoice", soon: false, icon: FileSearch },
-  { id: "comparison", label: "Model Comparison", soon: true, icon: GitCompare },
-  { id: "benchmarks", label: "Benchmark Results", soon: true, icon: BarChart3 },
+const ITEMS: { id: ViewId; label: string; icon: typeof LayoutDashboard }[] = [
+  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { id: "extract", label: "Extract Invoice", icon: FileSearch },
+  { id: "comparison", label: "Model Comparison", icon: GitCompare },
+  { id: "benchmarks", label: "Benchmark Results", icon: BarChart3 },
 ];
 
 type SidebarProps = {
@@ -36,7 +36,6 @@ export function Sidebar({ view, onChange }: SidebarProps) {
             >
               <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
               <span>{item.label}</span>
-              {item.soon ? <span className="text-[10px] uppercase tracking-wide text-slate-400">Soon</span> : null}
             </button>
           );
         })}

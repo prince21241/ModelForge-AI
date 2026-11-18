@@ -1,4 +1,4 @@
-import type { ExtractResponse } from "../types";
+import { isDocumentResult, METHOD_LABELS, type ExtractResponse } from "../types";
 
 type InferenceDetailsProps = {
   result: ExtractResponse | null;
@@ -19,13 +19,29 @@ export function InferenceDetails({ result }: InferenceDetailsProps) {
             <dd className="font-medium text-slate-900">{result.model}</dd>
           </div>
           <div>
-            <dt className="text-slate-500">Latency</dt>
+            <dt className="text-slate-500">Model latency</dt>
             <dd className="font-medium text-slate-900">{Math.round(result.latency_ms)} ms</dd>
           </div>
           <div>
             <dt className="text-slate-500">Review status</dt>
             <dd className="font-medium text-amber-800">{result.requires_review ? "Needs review" : "No review flag"}</dd>
           </div>
+          {isDocumentResult(result) ? (
+            <>
+              <div>
+                <dt className="text-slate-500">Document processing</dt>
+                <dd className="font-medium text-slate-900">{METHOD_LABELS[result.extraction_method]}</dd>
+              </div>
+              <div>
+                <dt className="text-slate-500">Document latency</dt>
+                <dd className="font-medium text-slate-900">{Math.round(result.document_latency_ms)} ms</dd>
+              </div>
+              <div>
+                <dt className="text-slate-500">Total request</dt>
+                <dd className="font-medium text-slate-900">{Math.round(result.total_latency_ms)} ms</dd>
+              </div>
+            </>
+          ) : null}
           <div className="sm:col-span-3">
             <dt className="text-slate-500">Validation warnings</dt>
             <dd>

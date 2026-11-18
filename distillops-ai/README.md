@@ -394,7 +394,7 @@ Loss fell across the three epochs, but the student still does not emit the five-
 
 **Phase 4 — Teacher versus student.** After a longer student run, score the teacher and the student on the same validation documents. Compare exact match, accuracy when present, JSON validity, latency, and cost. Run the test split once, only after those choices are frozen.
 
-**Phase 5 — Deployment.** The local FastAPI service is in `backend/` and the review UI is in `frontend/`. The Phase 1 package layout is imported by the service rather than rewritten.
+**Phase 5 — Deployment.** The local FastAPI service is in `backend/` and the review UI is in `frontend/`. The service can read pasted text, a text PDF, or a scanned PDF or image. The Phase 1 package layout is imported by the service rather than rewritten.
 
 ## Local extraction API
 
@@ -430,3 +430,55 @@ npm run dev
 ```
 
 The page is [http://127.0.0.1:5173](http://127.0.0.1:5173). `VITE_API_BASE_URL` defaults to `http://127.0.0.1:8000`. Frontend tests are `npm test`. A production bundle is `npm run build`.
+
+One command from `distillops-ai` starts both servers with the existing virtual environment:
+
+```powershell
+.\scripts\start_local.ps1
+```
+
+`GET /api/benchmarks` reads the saved Phase 4 JSON reports and does not score invoices. Model Comparison and Benchmark Results display those files. A missing report stays blank. Teacher validation stays incomplete when the saved file says so, and no end-to-end rate is invented.
+
+`docker compose up --build` is an optional CPU container layout. It mounts `models/` and `reports/` read-only. On this machine, `scripts/start_local.ps1` is the startup that uses the installed CUDA environment. The image build downloads a CPU PyTorch wheel and is not required for local use.
+
+## Invoice uploads
+
+`POST /api/documents/extract` accepts one `multipart/form-data` file and `model=student`. Supported files are PDF, PNG, JPG, and JPEG. The server checks the file signature, not only the extension. The default limits are 10 MB and 10 PDF pages. A page or image above 25 million pixels is rejected. Oversized text is rejected instead of truncated.
+
+A PDF page with selectable text is read with PyMuPDF. A page with little or no text layer is rendered at 150 DPI, capped at 200 DPI, and read with local Tesseract. Native text and OCR are not mixed on the same page. PNG and JPEG files go straight to Tesseract. Nothing is sent to an external OCR service. The original file is deleted after the request and is not stored.
+
+The response adds the filename, content type, page count, extraction method (`pdf_text`, `pdf_ocr`, `pdf_mixed`, or `image_ocr`), extracted text, and three timings: document processing, model generation, and the total request. `latency_ms` remains the model generation time. `POST /api/extract` is unchanged.
+
+OCR results include an extra review warning. The student still has no confidence score. Review every field.
+
+### Tesseract on Windows
+
+Image uploads and scanned PDF pages need the Tesseract executable. Text PDFs do not.
+
+```powershell
+winget install -e --id UB-Mannheim.TesseractOCR
+```
+
+If `tesseract` is not on `PATH`, set `TESSERACT_CMD` in `.env` to the executable, for example `C:\Program Files\Tesseract-OCR\tesseract.exe`. The English language data installed with that package is the one the API requests.
+
+### Upload environment variables
+
+| Variable | Default |
+| --- | --- |
+| `TESSERACT_CMD` | empty, so `PATH` is used |
+| `DISTILLOPS_MAX_UPLOAD_BYTES` | 10485760 |
+| `DISTILLOPS_MAX_PDF_PAGES` | 10 |
+| `DISTILLOPS_OCR_TIMEOUT_SECONDS` | 30 |
+| `DISTILLOPS_OCR_DPI` | 150, clamped between 72 and 200 |
+| `DISTILLOPS_MAX_IMAGE_PIXELS` | 25000000 |
+
+### Troubleshooting
+
+- `415` means the type is unsupported or the signature does not match the name.
+- `413` means the file, a rendered page, or the extracted text is over the limit. The text was not truncated.
+- `422` means the file is empty, corrupt, encrypted, or had no readable text.
+- `408` means OCR exceeded its time budget.
+- `503` on an image or scanned page means Tesseract was not found. A text PDF can still be extracted.
+- The first student request also loads the checkpoint, so the total time can be much larger than the model latency.
+- OCR can misread letters and amounts. A short text layer on an otherwise scanned page is not combined with OCR, so that page is read from the image only.
+- The preview stays in the browser. The API does not return the original file.

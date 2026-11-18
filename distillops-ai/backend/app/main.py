@@ -11,7 +11,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from backend.app.api.routes import extraction, health
+from backend.app.api.routes import benchmarks, documents, extraction, health
 from backend.app.core.config import ALLOWED_ORIGINS
 from backend.app.core.errors import ApiError
 from backend.app.services.student_service import StudentService
@@ -23,7 +23,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="DistillOps AI", version="0.5.0", lifespan=lifespan)
+app = FastAPI(title="DistillOps AI", version="0.5.2", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=list(ALLOWED_ORIGINS),
@@ -33,6 +33,8 @@ app.add_middleware(
 )
 app.include_router(health.router, prefix="/api")
 app.include_router(extraction.router, prefix="/api")
+app.include_router(documents.router, prefix="/api")
+app.include_router(benchmarks.router, prefix="/api")
 
 
 @app.exception_handler(ApiError)

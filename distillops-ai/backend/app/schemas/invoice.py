@@ -38,6 +38,26 @@ class ExtractResponse(BaseModel):
     warnings: list[str]
 
 
+class DocumentExtractResponse(BaseModel):
+    """One uploaded invoice. latency_ms is the student generation time."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    filename: str
+    content_type: str
+    page_count: int = Field(ge=1)
+    extraction_method: str
+    extracted_text: str
+    model: str
+    fields: InvoiceFields
+    latency_ms: float = Field(ge=0)
+    document_latency_ms: float = Field(ge=0)
+    model_latency_ms: float = Field(ge=0)
+    total_latency_ms: float = Field(ge=0)
+    requires_review: bool
+    warnings: list[str]
+
+
 class HealthResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
