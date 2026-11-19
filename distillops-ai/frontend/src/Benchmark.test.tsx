@@ -2,8 +2,19 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
+import {
+  exactMatchDetail,
+  exactMatchRate,
+  fieldComparison,
+  fieldRate,
+  formatMs,
+  latencyComparison,
+  lockedTestLabel,
+  toPercent,
+} from "./benchmarkMetrics";
+import type { BenchmarkLibrary, SavedFieldMetric, SavedReportBody } from "./types";
 
-const LIBRARY = {
+const LIBRARY: BenchmarkLibrary = {
   source: "phase4-saved-reports",
   rescored: false,
   reports: [
@@ -180,18 +191,93 @@ function mockBackend() {
   );
 }
 
+function reportAt(index: number): SavedReportBody {
+  const report = LIBRARY.reports[index]?.report;
+  if (!report) {
+    throw new Error(`fixture report ${index} is missing`);
+  }
+  return report;
+}
+
+describe("saved benchmark metrics", () => {
+  it("derives percentages from the saved rates and counts", () => {
+    const teacher = reportAt(0);
+    const student = reportAt(1);
+    expect(toPercent(exactMatchRate(teacher))).toBe(100);
+    expect(toPercent(exactMatchRate(student))).toBe(60);
+    const fields = fieldComparison(teacher, student);
+    expect(fields).toEqual([
+      {
+        key: "vendor",
+        label: "Vendor",
+        teacher: 100,
+        student: 80,
+        teacherLabel: "100% (5 / 5)",
+        studentLabel: "80% (4 / 5)",
+      },
+    ]);
+    expect(fields.some((point) => point.key === "invoice_number")).toBe(false);
+    const latency = latencyComparison(teacher, student);
+    expect(latency.map((point) => point.key)).toEqual(["median", "average", "p95"]);
+    expect(latency[0]).toMatchObject({ teacher: 1052, student: 1239, teacherLabel: "1052 ms", studentLabel: "1239 ms" });
+  });
+
+  it("keeps a missing end-to-end rate and a missing latency as unavailable", () => {
+    const validation = reportAt(2);
+    expect(validation.exact_match_accuracy).toBe(1);
+    expect(exactMatchRate(validation)).toBeNull();
+    expect(exactMatchDetail(validation)).toBe("2 scored. End-to-end accuracy was not reported.");
+    expect(formatMs(validation.latency_ms_median)).toBe("Not available");
+    const missingAccuracy: SavedFieldMetric = {
+      field: "date",
+      correct: 1,
+      scored: 2,
+      accuracy: null,
+      missing: 0,
+      hallucinated: 0,
+      incorrect: 1,
+    };
+    expect(fieldRate(missingAccuracy)).toBe(0.5);
+    expect(toPercent(fieldRate(missingAccuracy))).toBe(50);
+    expect(fieldRate({ ...missingAccuracy, correct: 0, scored: 0, accuracy: null })).toBeNull();
+    expect(lockedTestLabel([reportAt(0), reportAt(1)])).toBe("Locked test: 5 synthetic invoices");
+    expect(lockedTestLabel([])).toBe("Locked test: Not available");
+  });
+});
+
 describe("saved benchmark screens", () => {
   it("shows the frozen test comparison without calling extract", async () => {
     mockBackend();
     const user = userEvent.setup();
     render(<App />);
     await user.click(screen.getByRole("button", { name: "Model Comparison" }));
-    expect((await screen.findAllByText("5 / 5")).length).toBeGreaterThan(0);
-    expect(screen.getByText("3 / 5")).toBeInTheDocument();
-    expect(screen.getByText("4 / 5")).toBeInTheDocument();
-    expect(screen.getAllByText("Not configured").length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("Historical Phase 4 benchmark")).length).toBeGreaterThan(0);
+    expect(screen.getByText("Locked test: 5 synthetic invoices")).toBeInTheDocument();
+    expect(screen.getByText("Teacher: GPT-4o-mini")).toBeInTheDocument();
+    expect(screen.getByText("Student: FLAN-T5-small")).toBeInTheDocument();
+    expect(screen.getByText(/too small for reliable production accuracy/)).toBeInTheDocument();
+    expect(screen.getByTestId("kpi-teacher-exact")).toHaveTextContent("100%");
+    expect(screen.getByTestId("kpi-teacher-exact")).toHaveTextContent("5 / 5");
+    expect(screen.getByTestId("kpi-student-exact")).toHaveTextContent("60%");
+    expect(screen.getByTestId("kpi-student-exact")).toHaveTextContent("3 / 5");
+    expect(screen.getByTestId("kpi-teacher-json")).toHaveTextContent("100%");
+    expect(screen.getByTestId("kpi-student-json")).toHaveTextContent("5 / 5");
+    expect(screen.getByTestId("chart-field-accuracy-data")).toHaveTextContent("Vendor");
+    expect(screen.getByTestId("chart-field-accuracy-data")).toHaveTextContent("80% (4 / 5)");
+    expect(screen.getByTestId("chart-field-accuracy-data")).not.toHaveTextContent("Invoice number");
+    expect(screen.getByTestId("chart-latency-data")).toHaveTextContent("1052 ms");
+    expect(screen.getByTestId("chart-latency-data")).toHaveTextContent("8892 ms");
+    expect(screen.getByTestId("chart-errors-data")).toHaveTextContent("Incorrect fields");
+    expect(screen.getByTestId("chart-errors-data")).toHaveTextContent("Hallucinated fields");
+    expect(screen.getByText(/Teacher: Not configured/)).toBeInTheDocument();
+    expect(screen.getByText(/Student: Not configured/)).toBeInTheDocument();
+    expect(screen.getByTestId("performance-kpis").className).toContain("grid-cols-1");
+    expect(screen.getByTestId("performance-kpis").className).toContain("sm:grid-cols-2");
+    expect(screen.getByTestId("chart-field-accuracy").className).toContain("overflow-x-auto");
     expect(screen.getByText(/does not call the teacher/)).toBeInTheDocument();
     expect(vi.mocked(fetch).mock.calls.some((call) => String(call[0]).endsWith("/api/extract"))).toBe(false);
+    await user.click(screen.getByText("Invoice-level results"));
+    expect(screen.getByText("inv-synth-012")).toBeInTheDocument();
   });
 
   it("shows a missing report and an incomplete validation score", async () => {
@@ -200,8 +286,14 @@ describe("saved benchmark screens", () => {
     render(<App />);
     await user.click(screen.getByRole("button", { name: "Benchmark Results" }));
     expect(await screen.findByText("This saved report is not on this machine.")).toBeInTheDocument();
-    expect(screen.getByText("2 scored. End-to-end accuracy was not reported.")).toBeInTheDocument();
-    expect(screen.getByText("inv-synth-012")).toBeInTheDocument();
+    expect(screen.getAllByText("Historical Phase 4 benchmark").length).toBeGreaterThan(0);
+    expect(screen.getByText("Locked test: 5 synthetic invoices")).toBeInTheDocument();
+    expect(screen.getByText(/too small for reliable production accuracy/)).toBeInTheDocument();
+    const validation = screen.getByTestId("report-teacher-val");
+    expect(validation).toHaveTextContent("Not available");
+    expect(validation).toHaveTextContent("2 scored. End-to-end accuracy was not reported.");
     expect(screen.getByText(/does not score invoices again/)).toBeInTheDocument();
+    await user.click(screen.getByText("Invoice-level results for student test"));
+    expect(screen.getByText("inv-synth-012")).toBeInTheDocument();
   });
 });

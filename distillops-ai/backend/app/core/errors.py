@@ -91,3 +91,26 @@ class OcrTimeoutError(ApiError):
 class TooManyPixelsError(ApiError):
     def __init__(self) -> None:
         super().__init__(413, "The image is too large to process safely.")
+
+
+class TeacherApprovalError(ApiError):
+    def __init__(self) -> None:
+        super().__init__(
+            403,
+            "Confirm that this invoice may be sent to the teacher before comparing. No teacher request was sent.",
+        )
+
+
+class TeacherDisabledError(ApiError):
+    def __init__(self, detail: str) -> None:
+        super().__init__(403, detail)
+
+
+class TeacherKeyMissingError(ApiError):
+    def __init__(self, detail: str = "OPENAI_API_KEY is not set. No teacher request was sent.") -> None:
+        super().__init__(503, detail)
+
+
+class TeacherBudgetError(ApiError):
+    def __init__(self, detail: str) -> None:
+        super().__init__(429, detail)

@@ -437,7 +437,15 @@ One command from `distillops-ai` starts both servers with the existing virtual e
 .\scripts\start_local.ps1
 ```
 
-`GET /api/benchmarks` reads the saved Phase 4 JSON reports and does not score invoices. Model Comparison and Benchmark Results display those files. A missing report stays blank. Teacher validation stays incomplete when the saved file says so, and no end-to-end rate is invented.
+`GET /api/benchmarks` reads the saved Phase 4 JSON reports and does not score invoices. Model Comparison keeps those results on the Historical benchmark tab. Benchmark Results displays the same files. A missing report stays blank. Teacher validation stays incomplete when the saved file says so, and no end-to-end rate is invented.
+
+The Live comparison tab can send one invoice to the frozen student and to `gpt-4o-mini` after you confirm in the dialog. It is off unless `DISTILLOPS_TEACHER_COMPARE_ENABLED=true`. `GET /api/compare/status` only reads that configuration. `POST /api/compare` and `POST /api/documents/compare` reject the request before any teacher call unless the feature is on, `OPENAI_API_KEY` is set, the request sets `teacher_approved` to true, and the process-local spending gate allows it. Uploads are read once. Both models then receive that same text. The API does not store the invoice or the teacher response.
+
+Set both `TEACHER_INPUT_USD_PER_MILLION_TOKENS` and `TEACHER_OUTPUT_USD_PER_MILLION_TOKENS` to estimate teacher cost as input tokens times the input rate, plus output tokens times the output rate, divided by 1,000,000. Set `STUDENT_USD_PER_1000_INFERENCES` to estimate one local run as that rate divided by 1,000. A missing rate stays null and is shown as "Not configured". It is not treated as zero. Student API token counts stay null because local inference does not report them.
+
+`DISTILLOPS_TEACHER_COMPARE_MAX_REQUESTS` defaults to 20. `DISTILLOPS_TEACHER_COMPARE_BUDGET_USD` is an optional cap. When it is set, token prices must also be set, and each call reserves `DISTILLOPS_TEACHER_COMPARE_RESERVE_USD` (default 0.05) before the provider responds. The reserve and the request count share one lock, so concurrent requests cannot pass a limit together. The counter is in memory for this process. Restarting the API clears it, and a second process would not share it. `DISTILLOPS_PUBLIC_DEPLOYMENT=true` refuses live teacher calls for that reason. This app is a local workstation tool, not a public deployment.
+
+Teacher temperature stays at `TEACHER_TEMPERATURE`, which defaults to 0. A field difference is labeled model disagreement. The screen does not call one model more accurate, because the invoice you paste has no ground-truth labels.
 
 `docker compose up --build` is an optional CPU container layout. It mounts `models/` and `reports/` read-only. On this machine, `scripts/start_local.ps1` is the startup that uses the installed CUDA environment. The image build downloads a CPU PyTorch wheel and is not required for local use.
 

@@ -1,5 +1,7 @@
 import type {
   BenchmarkLibrary,
+  CompareResponse,
+  CompareStatus,
   DocumentExtractResponse,
   ExtractResponse,
   HealthResponse,
@@ -43,6 +45,31 @@ export async function extractInvoice(documentText: string): Promise<ExtractRespo
     body: JSON.stringify({ document_text: documentText, model: "student" }),
   });
   return readJson<ExtractResponse>(response);
+}
+
+export async function fetchCompareStatus(): Promise<CompareStatus> {
+  return readJson<CompareStatus>(await request("/api/compare/status"));
+}
+
+export async function compareInvoice(documentText: string): Promise<CompareResponse> {
+  const response = await request("/api/compare", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ document_text: documentText, teacher_approved: true }),
+  });
+  return readJson<CompareResponse>(response);
+}
+
+export async function compareDocument(file: File): Promise<CompareResponse> {
+  const body = new FormData();
+  body.append("file", file);
+  body.append("teacher_approved", "true");
+  const response = await request("/api/documents/compare", {
+    method: "POST",
+    headers: { Accept: "application/json" },
+    body,
+  });
+  return readJson<CompareResponse>(response);
 }
 
 export async function extractDocument(file: File): Promise<DocumentExtractResponse> {

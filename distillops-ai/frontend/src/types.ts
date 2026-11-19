@@ -145,3 +145,55 @@ export const EMPTY_FIELDS: InvoiceFields = {
   total: "",
   currency: "",
 };
+
+export type CompareStatus = {
+  feature_enabled: boolean;
+  available: boolean;
+  api_key_configured: boolean;
+  teacher_model: string | null;
+  pricing_configured: boolean;
+  student_pricing_configured: boolean;
+  max_requests: number;
+  budget_usd: number | null;
+  public_deployment: boolean;
+  budget_scope: string;
+  detail: string;
+};
+
+export type ModelOutcome = {
+  role: "teacher" | "student";
+  model: string;
+  succeeded: boolean;
+  fields: InvoiceFields | null;
+  latency_ms: number | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  estimated_cost_usd: number | null;
+  pricing_configured: boolean;
+  error: string | null;
+  warnings: string[];
+};
+
+export type FieldComparison = {
+  field: string;
+  label: string;
+  teacher_value: string | null;
+  student_value: string | null;
+  status: "agree" | "disagree" | "unavailable";
+};
+
+export type CompareResponse = {
+  teacher: ModelOutcome;
+  student: ModelOutcome;
+  fields: FieldComparison[];
+  agreement_count: number | null;
+  fields_compared: number;
+  document_latency_ms: number;
+  extracted_text: string;
+  filename: string | null;
+  content_type: string | null;
+  page_count: number | null;
+  extraction_method: string | null;
+  partial: boolean;
+  warnings: string[];
+};

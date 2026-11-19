@@ -98,9 +98,9 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-900 md:grid md:grid-cols-[16rem_1fr]">
+    <div className="min-h-screen min-w-0 overflow-x-hidden bg-slate-100 text-slate-900 md:grid md:grid-cols-[16rem_1fr]">
       <Sidebar view={view} onChange={setView} />
-      <div className="min-w-0">
+      <div className={`min-w-0 ${view === "comparison" || view === "benchmarks" ? "min-h-screen bg-white" : ""}`}>
         <TopBar connected={connected} modelLabel={modelLabel} />
         <main className="p-4 md:p-8">
           {view === "comparison" ? <ComparisonView /> : null}

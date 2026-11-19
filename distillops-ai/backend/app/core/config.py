@@ -7,6 +7,7 @@ process working directory. The frozen Phase 4 checkpoint is not modified.
 from __future__ import annotations
 
 import os
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from src.benchmark import DECODING, FROZEN_STUDENT_DIR
@@ -82,3 +83,62 @@ def ocr_dpi() -> int:
     """Render resolution for a scanned PDF page, clamped to a safe range."""
     value = _positive_int("DISTILLOPS_OCR_DPI", 150)
     return min(200, max(72, value))
+
+
+def _flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def teacher_compare_enabled() -> bool:
+    """Live teacher comparison is off unless this flag is set. The screen does not call OpenAI."""
+    return _flag("DISTILLOPS_TEACHER_COMPARE_ENABLED")
+
+
+def public_deployment() -> bool:
+    """Public mode refuses live teacher calls because the spending counter is process-local."""
+    return _flag("DISTILLOPS_PUBLIC_DEPLOYMENT")
+
+
+def teacher_compare_max_requests() -> int:
+    """How many teacher calls this process may start. The default is 20."""
+    return _positive_int("DISTILLOPS_TEACHER_COMPARE_MAX_REQUESTS", 20)
+
+
+def teacher_compare_budget_usd() -> Decimal | None:
+    """Optional dollar cap. Blank means the request count is the only cap."""
+    raw = os.environ.get("DISTILLOPS_TEACHER_COMPARE_BUDGET_USD", "").strip()
+    if not raw:
+        return None
+    try:
+        value = Decimal(raw)
+    except InvalidOperation:
+        return None
+    if value < 0:
+        return None
+    return value
+
+
+def teacher_compare_reserve_usd() -> Decimal:
+    """Amount held against the dollar cap before a teacher call returns."""
+    raw = os.environ.get("DISTILLOPS_TEACHER_COMPARE_RESERVE_USD", "").strip()
+    if not raw:
+        return Decimal("0.05")
+    try:
+        value = Decimal(raw)
+    except InvalidOperation:
+        return Decimal("0.05")
+    return value if value > 0 else Decimal("0.05")
+
+
+def student_inference_cost_usd() -> Decimal | None:
+    """One local inference, or None when STUDENT_USD_PER_1000_INFERENCES is blank."""
+    raw = os.environ.get("STUDENT_USD_PER_1000_INFERENCES", "").strip()
+    if not raw:
+        return None
+    try:
+        value = Decimal(raw)
+    except InvalidOperation:
+        return None
+    if value < 0:
+        return None
+    return (value / Decimal(1000)).quantize(Decimal("0.000001"))
